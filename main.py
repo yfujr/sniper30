@@ -1,53 +1,341 @@
+
 import requests
+import threading
 import random
 import string
-import threading
 import time
-import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from queue import Queue
 
-# ========== CONFIG ==========
-THREADS = 100
+# === CONFIG ===
+THREADS = 200  # Increase threads as much as your system and network allow
+BIRTHDAY = '1999-04-20'
 VALID_FILE = 'valid.txt'
 CHECKED_FILE = 'checked.txt'
-BIRTHDAY = '1999-04-20'
-LOG_TAKEN = True
-USERNAME_LENGTH = 4
-MAX_PROXY_RETRIES = 3
-DELAY_IF_RATE_LIMITED = 30
+LOG_TAKEN = False  # Log taken usernames? Slows output.
 
-PROXY_LIST = [
-    'http://1.0.171.213', 'http://108.162.192.12', 'http://108.162.192.173',
-    'http://108.162.193.160', 'http://108.141.130.146', 'http://108.162.192.185',
-    'http://1.0.170.50', 'http://108.162.192.194', 'http://108.162.192.0',
-    'http://102.177.176.110', 'socks4://1.0.103.97', 'socks4://1.54.41.16',
-    'http://1.52.197.113', 'http://1.54.172.229', 'http://1.52.198.150'
-]
+# === Proxy list from your huge list ===
+RAW_PROXY_LIST = '''
+80.78.30.182:3128
+43.159.54.102:8888
+85.133.240.75:8080
+151.236.24.38:80
+89.58.45.94:43476
+123.141.181.8:5031
+123.141.181.86:5031
+123.141.181.46:5031
+219.65.73.81:80
+43.156.183.112:1080
+57.129.81.201:8080
+123.141.181.38:5031
+32.223.6.94:80
+133.18.234.13:80
+103.65.237.92:5678
+181.174.164.221:80
+190.58.248.86:80
+50.122.86.118:80
+159.65.245.255:80
+123.141.181.7:5031
+41.59.90.175:80
+4.156.78.45:80
+195.158.8.123:3128
+152.53.107.230:80
+37.187.74.125:80
+81.169.213.169:8888
+23.247.136.254:80
+158.255.77.169:80
+4.245.123.244:80
+92.67.186.210:80
+154.118.231.30:80
+4.195.16.140:80
+45.146.163.31:80
+59.7.246.4:80
+108.141.130.146:80
+47.74.157.194:80
+90.162.35.34:80
+91.132.92.150:80
+123.141.181.49:5031
+62.99.138.162:80
+189.202.188.149:80
+80.120.49.242:80
+195.88.71.201:8888
+41.59.90.171:80
+89.58.55.33:80
+213.143.113.82:80
+89.58.57.45:80
+152.53.168.53:44887
+91.107.149.78:80
+143.42.66.91:80
+190.103.177.131:80
+82.102.10.253:80
+123.141.181.1:5031
+198.49.68.80:80
+212.113.112.84:1080
+138.199.233.152:80
+219.93.101.63:80
+0.0.0.0:80
+68.185.57.66:80
+127.0.0.7:80
+161.35.70.249:8080
+213.159.73.98:3128
+47.252.29.28:11222
+139.162.78.109:8080
+134.209.29.120:80
+157.180.121.252:46206
+47.90.205.231:33333
+138.197.68.35:4857
+47.250.159.65:8081
+51.75.206.209:80
+155.94.241.132:3128
+42.114.178.153:16000
+103.176.96.243:1111
+103.144.237.9:8080
+190.52.99.220:999
+179.1.234.5:999
+8.213.222.157:8080
+66.29.154.105:3128
+123.30.154.171:7777
+154.65.39.7:80
+159.89.239.166:18084
+124.108.6.20:8085
+156.38.112.11:80
+20.127.221.223:80
+200.174.198.86:8888
+192.73.244.36:80
+47.238.130.212:8888
+128.199.202.122:8080
+65.38.213.154:8881
+38.147.98.190:8080
+5.78.129.53:80
+194.150.110.134:80
+129.159.38.24:80
+8.211.51.115:5060
+103.151.217.218:3128
+20.13.34.208:8118
+198.74.51.79:8888
+41.59.90.168:80
+47.56.110.204:8989
+176.126.103.194:44214
+147.75.34.105:443
+103.203.234.210:8080
+8.219.97.248:80
+103.118.127.218:6969
+89.38.129.15:3128
+45.189.252.246:999
+45.5.119.70:999
+57.129.29.184:1080
+103.51.205.168:8080
+181.119.103.237:999
+45.230.170.30:999
+47.91.110.148:1000
+38.54.71.67:80
+8.220.141.8:3128
+77.238.103.98:8080
+113.192.3.230:1452
+103.188.169.11:8080
+190.120.255.205:999
+102.39.233.4:8080
+188.125.169.235:8080
+181.174.231.153:999
+112.198.186.104:8082
+119.18.146.92:96
+103.125.39.93:8080
+79.121.102.227:8080
+84.39.112.144:3128
+62.217.187.248:10808
+67.43.236.18:3927
+144.22.175.58:1080
+23.247.136.248:80
+209.97.150.167:8080
+136.0.88.148:5206
+145.223.44.229:5912
+166.88.63.110:5482
+142.111.131.106:6184
+161.123.93.8:5738
+45.138.101.192:8085
+136.0.109.31:6317
+46.202.59.41:5532
+38.154.195.213:9301
+23.27.208.157:5867
+23.27.91.27:6106
+104.239.104.166:6390
+64.64.110.105:6628
+206.206.69.143:6407
+45.147.234.11:8085
+23.27.210.196:6566
+65.108.159.129:8081
+158.255.77.168:80
+78.47.127.91:80
+64.176.6.165:13920
+27.79.174.182:16000
+212.110.188.220:34409
+218.236.166.96:8888
+78.38.53.36:80
+90.156.169.163:80
+27.79.182.222:16000
+47.91.104.88:3128
+201.150.116.3:999
+103.113.3.240:3128
+47.89.184.18:3128
+192.177.33.17:8000
+67.43.228.250:7015
+8.211.194.85:312
+103.214.109.67:80
+154.205.147.234:1080
+156.244.0.116:999
+47.91.115.179:9080
+8.215.15.163:104
+171.237.125.22:1009
+190.97.246.60:999
+14.248.84.131:8080
+201.230.8.244:999
+189.124.85.77:33333
+14.224.218.210:8080
+46.161.194.69:8085
+176.236.151.195:50800
+103.203.234.24:1211
+195.34.91.67:8080
+45.237.185.17:999
+177.52.221.110:999
+103.139.98.169:8080
+84.53.245.42:41258
+154.0.14.116:3128
+139.59.1.14:80
+113.160.132.195:8080
+188.125.167.247:8080
+118.27.111.97:80
+167.172.253.162:4857
+78.157.57.71:3128
+42.96.16.176:1312
+5.181.178.69:8080
+72.10.160.170:3949
+72.10.160.90:3581
+72.10.164.178:28247
+34.132.186.77:80
+45.166.93.113:999
+202.137.14.57:8085
+92.113.3.205:6214
+193.233.211.51:8085
+104.239.81.249:6784
+192.186.172.190:9190
+216.74.118.72:6227
+31.59.13.109:6379
+185.101.253.51:5611
+198.46.246.24:6648
+104.233.26.164:6002
+154.22.56.95:5136
+45.38.78.201:6138
+23.95.250.168:6441
+198.46.241.43:6578
+193.233.229.195:8085
+23.27.78.153:5733
+38.153.148.229:5500
+216.173.76.241:6868
+107.172.221.111:6066
+104.252.49.205:6141
+67.227.37.188:5730
+104.252.109.19:6952
+107.172.156.42:5690
+38.170.202.223:8800
+93.177.94.159:8085
+136.0.103.90:5791
+104.233.26.161:5999
+173.211.8.122:6234
+45.80.107.113:8085
+67.227.113.103:5643
+172.245.157.112:6697
+193.233.228.185:8085
+154.29.232.74:6734
+2.57.21.95:5587
+154.30.241.249:9960
+166.88.195.123:5755
+191.101.41.250:6322
+67.227.119.84:6413
+91.132.125.84:8085
+69.58.12.37:8042
+38.170.168.106:5381
+206.206.118.30:6268
+45.136.26.90:8085
+216.74.118.102:6257
+212.119.40.117:8085
+185.216.107.231:5808
+161.123.115.138:5159
+154.30.242.58:9452
+216.173.120.181:6473
+179.61.166.230:6653
+45.159.23.201:8085
+194.104.9.157:8085
+206.206.122.143:5774
+92.113.236.198:6783
+192.210.132.145:6115
+176.126.111.207:8085
+173.214.176.182:6153
+142.111.255.216:5505
+136.0.109.216:6502
+188.215.5.245:5275
+154.30.244.169:9610
+64.49.36.59:8085
+136.0.103.180:5881
+45.145.129.76:8085
+104.253.77.126:5548
+38.153.138.142:9481
+213.108.1.46:8085
+192.3.48.58:6051
+66.78.34.84:5703
+104.252.49.44:5980
+104.238.10.96:6042
+136.0.109.111:6397
+104.233.26.59:5897
+194.180.237.116:8085
+107.172.116.57:5513
+193.233.211.82:8085
+67.227.37.57:5599
+31.56.137.107:6183
+166.88.172.243:8085
+192.186.172.49:9049
+45.61.127.224:6163
+184.174.43.177:6717
+38.154.195.97:9185
+104.168.8.254:5707
+104.168.118.234:6190
+23.27.196.138:6507
+38.170.202.208:8800
+104.253.13.206:5638
+148.135.148.217:6210
+104.238.10.228:6174
+89.249.198.40:6126
+198.37.121.93:6513
+107.173.105.123:5810
+173.245.88.236:5539
+136.0.182.32:6102
+198.12.112.131:5142
+23.27.78.106:5686
+107.175.119.49:6577
+38.154.224.140:6681
+206.206.118.39:6277
+46.202.59.130:5621
+46.202.67.56:6052
+206.206.73.204:6820
+'''
 
-# ========== UTILS ==========
-class bcolors:
-    OK = '\033[94m'
-    FAIL = '\033[91m'
-    END = '\033[0m'
+PROXY_LIST = ['http://' + p.strip() for p in RAW_PROXY_LIST.strip().split('\n') if p.strip() and not p.startswith('0.0.0.0') and not p.startswith('127.')]
 
-lock = threading.Lock()
+# === THREAD SAFE CONTAINERS ===
+checked_lock = threading.Lock()
 checked_usernames = set()
-successful_usernames = []
+valid_usernames = []
 proxy_lock = threading.Lock()
-proxy_queue = Queue()
-username_queue = Queue()
-proxy_retry_counts = {}
+proxy_index = 0
 
-for proxy in PROXY_LIST:
-    proxy_queue.put(proxy)
-
-# ========== FILE LOAD ==========
-if os.path.exists(CHECKED_FILE):
+# Load checked usernames if file exists
+try:
     with open(CHECKED_FILE, 'r') as f:
         for line in f:
             checked_usernames.add(line.strip())
+except FileNotFoundError:
+    pass
 
-# ========== GENERATORS ==========
+# === Username generator ===
 def generate_username():
     pos0 = string.ascii_lowercase + string.digits
     pos1 = pos2 = string.ascii_lowercase + string.digits + '_'
@@ -59,105 +347,70 @@ def generate_username():
             continue
         return uname
 
-def refill_username_queue(count=1000):
-    with lock:
-        for _ in range(count):
-            uname = generate_username()
-            if uname not in checked_usernames:
-                username_queue.put(uname)
+# === Proxy selector (round robin) ===
+def get_next_proxy():
+    global proxy_index
+    with proxy_lock:
+        proxy = PROXY_LIST[proxy_index]
+        proxy_index = (proxy_index + 1) % len(PROXY_LIST)
+    return proxy
 
-# ========== LOGGING ==========
-def log_success(username, thread_id):
-    with lock:
-        successful_usernames.append(username)
-        print(f"{bcolors.OK}[+] {username} is available [T{thread_id}]{bcolors.END}")
-        with open(VALID_FILE, 'a') as f:
-            f.write(username + '\n')
+# === Check username function ===
+def check_username(username):
+    proxy = get_next_proxy()
+    proxies = {'http': proxy, 'https': proxy}
+    url = f'https://auth.roblox.com/v1/usernames/validate?request.username={username}&request.birthday={BIRTHDAY}'
+    try:
+        r = requests.get(url, proxies=proxies, timeout=8)
+        if r.status_code == 429:
+            # Rate limited, sleep and retry once
+            time.sleep(2)
+            r = requests.get(url, proxies=proxies, timeout=8)
+        if r.status_code == 200:
+            data = r.json()
+            # code == 0 means available
+            return data.get('code') == 0
+        else:
+            return None
+    except Exception:
+        return None
 
-def log_taken(username, thread_id):
-    if LOG_TAKEN:
-        print(f"{bcolors.FAIL}[TAKEN] {username} [T{thread_id}]{bcolors.END}")
-
-def record_checked(username):
-    with lock:
-        if username not in checked_usernames:
+# === Worker for thread ===
+def worker():
+    while True:
+        username = generate_username()
+        with checked_lock:
+            if username in checked_usernames:
+                continue
             checked_usernames.add(username)
             with open(CHECKED_FILE, 'a') as f:
                 f.write(username + '\n')
 
-# ========== PROXY/REQUEST HANDLING ==========
-def get_proxy():
-    while True:
-        proxy = proxy_queue.get()
-        retries = proxy_retry_counts.get(proxy, 0)
-        if retries < MAX_PROXY_RETRIES:
-            return proxy
-        else:
-            # Put it back after delay
-            time.sleep(DELAY_IF_RATE_LIMITED)
-            proxy_retry_counts[proxy] = 0
-            proxy_queue.put(proxy)
+        result = check_username(username)
+        if result is True:
+            print(f'[+] {username} is AVAILABLE')
+            with checked_lock:
+                valid_usernames.append(username)
+                with open(VALID_FILE, 'a') as f:
+                    f.write(username + '\n')
+        elif result is False and LOG_TAKEN:
+            print(f'[-] {username} taken')
 
-def release_proxy(proxy, bad=False):
-    if bad:
-        proxy_retry_counts[proxy] = proxy_retry_counts.get(proxy, 0) + 1
-    else:
-        proxy_retry_counts[proxy] = 0
-    proxy_queue.put(proxy)
+# === Main ===
+def main():
+    print(f'Starting with {THREADS} threads and {len(PROXY_LIST)} proxies.')
+    with ThreadPoolExecutor(max_workers=THREADS) as executor:
+        futures = [executor.submit(worker) for _ in range(THREADS)]
+        # Keep running until manually stopped
+        try:
+            for future in as_completed(futures):
+                # We won't actually reach here because worker is infinite loop
+                pass
+        except KeyboardInterrupt:
+            print('\n[!] Interrupted by user')
+            print(f'Found {len(valid_usernames)} valid usernames:')
+            for u in valid_usernames:
+                print(' -', u)
 
-def check_username(username, proxy):
-    url = f"https://auth.roblox.com/v1/usernames/validate?request.username={username}&request.birthday={BIRTHDAY}"
-    try:
-        r = requests.get(url, proxies={'http': proxy, 'https': proxy}, timeout=10)
-        if r.status_code == 429:
-            return None, 429
-        r.raise_for_status()
-        return r.json().get('code') == 0, r.status_code
-    except:
-        return None, None
-
-# ========== THREAD WORK ==========
-def worker(thread_id):
-    while True:
-        if username_queue.empty():
-            refill_username_queue()
-
-        username = username_queue.get()
-        with lock:
-            if username in checked_usernames:
-                continue
-
-        proxy = get_proxy()
-        result, status = check_username(username, proxy)
-
-        if status == 429:
-            release_proxy(proxy, bad=True)
-            print(f"{bcolors.FAIL}[T{thread_id}] Rate limited. Retrying with new proxy...{bcolors.END}")
-            time.sleep(1)
-            username_queue.put(username)  # Retry this username
-            continue
-        else:
-            release_proxy(proxy, bad=(result is None))
-
-        record_checked(username)
-
-        if result:
-            log_success(username, thread_id)
-        else:
-            log_taken(username, thread_id)
-
-# ========== START ==========
-print(f"[*] Starting {THREADS} threads with rotating proxies. Press Ctrl+C to stop.\n")
-refill_username_queue()
-
-for i in range(THREADS):
-    threading.Thread(target=worker, args=(i+1,), daemon=True).start()
-
-try:
-    while True:
-        time.sleep(10)
-except KeyboardInterrupt:
-    print("\n[!] Stopped by user.")
-    print(f"\n✅ Found {len(successful_usernames)} valid usernames:\n")
-    for u in successful_usernames:
-        print(f" - {u}")
+if __name__ == '__main__':
+    main()
